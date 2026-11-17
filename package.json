@@ -1,8 +1,8 @@
 {
   "name": "xuanecho",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "manifest.json description",
+  "description": "青萱沐雨时，旧语应时来。经授权在本地记录、查找和复用 ChatGPT 提示词。",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -12,13 +12,17 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test": "playwright test --project=unit",
+    "test:e2e": "npm run build && playwright test --project=chromium-extension",
+    "test:all": "npm run build && playwright test"
   },
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.1.5",

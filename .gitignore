@@ -24,3 +24,8 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Automated browser test artifacts (synthetic data only)
+test-results/
+playwright-report/
+test

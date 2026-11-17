@@ -1,42 +1,57 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #54bc4ae0);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
+#root { width: 100%; }
+.app-shell { padding: 22px 20px 12px; height: 600px; display: flex; flex-direction: column; background: radial-gradient(ellipse at top left, #e9eedf 0, transparent 55%); }
+.brand-header, .capture-panel, .search-wrap, .list-heading, .notice, .connection, footer { flex-shrink: 0; }
+.brand-header { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
+.brand-mark { width: 40px; height: 40px; flex: 0 0 40px; color: #285a43; }
+.brand-header h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -.6px; }
+.brand-header h1 span { font-size: 11px; font-weight: 500; letter-spacing: 1px; margin-left: 6px; color: #6d7f6f; }
+.brand-header p { color: #73806f; font-size: 11px; letter-spacing: 1px; margin: 5px 0 0; }
+.version { margin-left: auto; color: #71816d; font-size: 10px; align-self: flex-start; border: 1px solid #d8e0d2; border-radius: 5px; padding: 3px 5px; }
+.capture-panel { background: #eeeee5; border: 1px solid #e0e2d5; border-radius: 12px; padding: 12px; margin-bottom: 18px; }
+.capture-panel.is-enabled { background: #eaf1e5; border-color: #d2e0c8; }
+.capture-heading { display: flex; align-items: center; gap: 7px; }
+.capture-heading h2 { font-size: 12px; font-weight: 600; margin: 0; }
+.status-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #a2a591; }
+.status-dot.on, .ready .status-dot { background: #4c8661; box-shadow: 0 0 0 3px #4c866112; }
+.capture-toggle { border: 0; border-radius: 6px; background: #fffdf6; color: #3c5d41; padding: 6px 8px; font-size: 11px; margin-left: auto; }
+.capture-toggle:hover { background: #fff; }
+.capture-panel p { font-size: 11px; color: #6a7764; line-height: 1.8; margin: 9px 0 0; }
+.search-wrap { position: relative; }
+.search-wrap svg { position: absolute; left: 12px; top: 12px; width: 17px; height: 17px; stroke: #84907f; stroke-width: 1.5; }
+.search-wrap input { width: 100%; padding: 11px 12px 11px 38px; border: 1px solid #dce2d5; border-radius: 10px; background: #fffefa; color: #263e33; font-size: 12px; }
+.search-wrap input::placeholder { color: #8b9586; }
+.list-heading { display: flex; align-items: center; justify-content: space-between; margin: 20px 1px 11px; }
+.list-heading h2 { font-size: 13px; margin: 0; font-weight: 600; }
+.list-heading > span { font-size: 11px; color: #85907e; }
+.prompt-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #c9d4c3 transparent; padding: 1px 3px 1px 1px; }
+.prompt-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; background: #fffefa; border: 1px solid #e0e5d9; border-radius: 9px; padding: 8px 10px; margin-bottom: 7px; }
+.prompt-card:last-child { margin-bottom: 0; }
+.record-meta { flex-shrink: 0; white-space: nowrap; font-size: 10px; color: #8a9581; }
+.prompt-text { flex: 1; min-width: 0; font-size: 12px; line-height: 1.6; color: #52664d; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; margin: 0; }
+.prompt-full-text { grid-column: 1 / -1; margin: 0; padding-top: 10px; border-top: 1px solid #e0e5d9; font-size: 12px; line-height: 1.8; color: #52664d; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-actions { display: flex; flex-shrink: 0; align-items: center; gap: 12px; }
+.text-button { background: transparent; border: 0; padding: 0; color: #72846f; font-size: 11px; }
+.text-button:hover { color: #2b5c40; }
+.delete-button:hover, .clear-button:hover { color: #a34b3d; }
+.insert-button { padding: 6px 12px; border: 0; border-radius: 6px; color: #f6f7ee; background: #326449; font-size: 11px; }
+.insert-button:hover { background: #244f39; }
+.empty-state { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 24px 24px 28px; }
+.empty-symbol { font-size: 36px; color: #96ae86; line-height: 1; margin: 4px 0 18px; }
+.empty-state h3 { font-size: 13px; font-weight: 500; margin: 0 0 9px; }
+.empty-state p { font-size: 12px; color: #87917d; line-height: 1.8; margin: 0; }
+.notice { font-size: 12px; line-height: 1.7; border-radius: 8px; padding: 9px 11px; margin: 0 0 11px; overflow-wrap: anywhere; }
+.notice.success { background: #e8f0e3; color: #386143; }
+.notice.error { background: #faeae2; color: #974d38; }
+.connection { display: flex; align-items: flex-start; gap: 7px; padding: 12px 0; color: #87917e; font-size: 10px; }
+.connection .status-dot { margin-top: 5px; }
+.connection p { margin: 0; line-height: 1.6; flex: 1; }
+.connection .text-button { font-size: 10px; padding-top: 1px; }
+footer { border-top: 1px solid #dfe5d7; display: flex; justify-content: space-between; padding: 11px 0 1px; color: #8d9783; font-size: 10px; }
+footer .text-button { font-size: 10px; }
+.modal-backdrop { position: fixed; inset: 0; background: #20352ac0; display: grid; place-items: center; z-index: 10; padding: 24px; }
+.confirm-dialog { width: 100%; background: #fffef8; padding: 22px; border-radius: 14px; box-shadow: 0 12px 40px #172d3133; }
+.confirm-dialog h2 { font-size: 17px; margin: 0 0 12px; }
+.confirm-dialog p { font-size: 12px; line-height: 1.8; color: #78806f; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.dialog-actions button { padding: 8px 12px; border: 1px solid #dfe5d7; background: #f5f6ef; color: #52664d; border-radius: 7px; font-size: 12px; }
+.dialog-actions .danger-button { background: #a04c39; border-color: #a04c39; color: #fff; }

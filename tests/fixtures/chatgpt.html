@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>XuanEcho synthetic ChatGPT fixture</title>
+<style>body{font:16px sans-serif;margin:30px;max-width:700px}#prompt-textarea{border:1px solid #aaa;min-height:60px;white-space:pre-wrap;padding:12px}button{padding:8px}article{margin-bottom:12px}.whitespace-pre-wrap{white-space:pre-wrap}</style></head>
+<body><h1>ChatGPT 测试页面（合成数据）</h1><main id="messages"><article><div data-message-author-role="user" data-message-id="old-user"><div class="whitespace-pre-wrap">旧聊天不应被导入</div></div></article><article><div data-message-author-role="assistant" data-message-id="old-assistant">这是旧回复</div></article></main>
+<form id="composer"><div id="prompt-textarea" role="textbox" contenteditable="true"><p><br></p></div><button data-testid="send-button" type="submit" disabled>发送</button></form>
+<script>
+if (new URLSearchParams(location.search).has('textarea')) document.querySelector('#prompt-textarea').outerHTML = '<textarea id="prompt-textarea"></textarea>';
+const editor = document.querySelector('#prompt-textarea');
+const bubbleLayout = new URLSearchParams(location.search).has('bubble-layout');
+if (new URLSearchParams(location.search).has('anonymous-editor') || bubbleLayout) {
+  editor.removeAttribute('id');
+  editor.className = 'ProseMirror';
+  // 用户实站反馈：只有 role="textbox"、contenteditable="true" 和 ProseMirror 类。
+  editor.style.cssText = 'border:1px solid #aaa;min-height:36px;padding:12px;white-space:pre-wrap';
+}
+const send = document.querySelector('[data-testid="send-button"]');
+if (bubbleLayout) {
+  send.removeAttribute('data-testid');
+  send.setAttribute('aria-label', '发送');
+  const old = document.querySelector('[data-message-author-role="user"]');
+  old.removeAttribute('data-message-author-role');
+  old.removeAttribute('data-message-id');
+  old.setAttribute('data-user-message-bubble', '');
+}
+// 模拟段落编辑器的文本模型：相邻段落以单个换行分隔，而不是 innerText 的双换行。
+const read = () => editor instanceof HTMLTextAreaElement ? editor.value
+  : editor.children.length && Array.from(editor.children).every(node => node.tagName === 'P')
+    ? Array.from(editor.children).map(node => node.innerText === '\n' ? '' : node.innerText).join('\n')
+    : editor.innerText;
+const clearEditor = () => { if (editor instanceof HTMLTextAreaElement) editor.value = ''; else editor.innerHTML = '<p><br></p>'; editor.dispatchEvent(new Event('input', {bubbles: true})); };
+window.fixtureSent = 0;
+window.addMessage = (role, text, id = crypto.randomUUID()) => {
+  const article = document.createElement('article');
+  const message = document.createElement('div');
+  if (bubbleLayout && role === 'user') {
+    if (window.lateMarker) requestAnimationFrame(() => message.setAttribute('data-user-message-bubble', ''));
+    else message.setAttribute('data-user-message-bubble', '');
+  } else { message.dataset.messageAuthorRole = role; message.dataset.messageId = id; }
+  const body = document.createElement('div'); body.className = 'whitespace-pre-wrap'; body.textContent = text;
+  message.append(body); article.append(message); document.querySelector('#messages').append(article);
+};
+editor.addEventListener('input', () => { send.disabled = !read().trim(); document.body.dataset.model = read(); });
+editor.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault(); if (!send.disabled) document.querySelector('form').requestSubmit(send);
+  }
+});
+document.querySelector('form').addEventListener('submit', event => {
+  event.preventDefault(); if (window.blockSubmit || !read().trim()) return;
+  const text = read();
+  const perform = () => { window.fixtureSent++; window.addMessage('user', text); clearEditor(); window.addMessage('assistant', '合成回复，不应保存'); };
+  if (window.delaySubmit) window.pendingSend = perform; else perform();
+});
+send.addEventListener('pointerdown', () => {
+  if (window.sendOnPointerDown && !send.disabled) document.querySelector('form').requestSubmit(send);
+});
+</script></body></html>
