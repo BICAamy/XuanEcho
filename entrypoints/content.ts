@@ -14,9 +14,7 @@ export default defineContentScript({
       const saved = await requestBackground<boolean>({ scope: 'xuanecho', action: 'record:add', input });
       captureError = null;
       return saved;
-    }, (error) => { captureError = errorMessage(error); }, (diagnostic) => {
-      if (import.meta.env.DEV) console.info('[XuanEcho] 采集诊断', diagnostic);
-    });
+    }, (error) => { captureError = errorMessage(error); });
     const refreshSettings = async () => {
       const revision = settingsRevision;
       try {
@@ -27,6 +25,7 @@ export default defineContentScript({
         captureError = '无法连接 XuanEcho，请刷新此页面后重试。';
       }
     };
+    const initialSettings = refreshSettings();
     const listener: Parameters<typeof browser.runtime.onMessage.addListener>[0] = (message, sender, respond) => {
       if (!isRequest(message) || sender.id !== browser.runtime.id) return;
       try {
@@ -38,8 +37,11 @@ export default defineContentScript({
             respond({ ok: true, data: null });
             break;
           case 'page:status':
-            respond({ ok: true, data: { editorFound: Boolean(findEditor()), captureError, diagnostics: capture.getDiagnostics() } });
-            break;
+            // 重新注入后先同步授权状态，再向弹窗确认连接，避免第一条消息漏采集。
+            void initialSettings.then(() => {
+              respond({ ok: true, data: { editorFound: Boolean(findEditor()), captureError, diagnostics: capture.getDiagnostics() } });
+            });
+            return true;
           case 'page:insert':
             if (typeof message.text !== 'string') throw new Error('提示词格式无效。');
             insertPrompt(message.text);
@@ -51,6 +53,5 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener(listener);
     ctx.addEventListener(window, 'focus', () => { void refreshSettings(); });
     ctx.onInvalidated(() => { capture.dispose(); browser.runtime.onMessage.removeListener(listener); });
-    void refreshSettings();
   },
 });

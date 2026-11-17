@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { STATE_KEY } from '../lib/domain';
 import type { ExtensionState } from '../lib/domain';
+import type { PageStatus, Response } from '../lib/messages';
 
 declare const chrome: typeof import('wxt/browser').browser;
 type App = { context: BrowserContext; chat: Page; popup: Page; worker: Worker; profile: string; extensionId: string };
@@ -20,6 +21,15 @@ async function launch(profile: string) {
 }
 async function getState(worker: Worker): Promise<ExtensionState | undefined> {
   return worker.evaluate(async (key) => (await chrome.storage.local.get(key))[key] as ExtensionState | undefined, STATE_KEY);
+}
+async function captureReport(app: App) {
+  const response = await app.worker.evaluate(async (url) => {
+    const tab = (await chrome.tabs.query({ url: 'https://chatgpt.com/*' })).find((tab) => tab.url === url);
+    if (tab?.id === undefined) throw new Error('Synthetic ChatGPT tab not found');
+    return chrome.tabs.sendMessage(tab.id, { scope: 'xuanecho', action: 'page:status' }, { frameId: 0 });
+  }, app.chat.url()) as Response<PageStatus>;
+  if (!response.ok) throw new Error(response.error);
+  return { page: response.data, settingEnabled: (await getState(app.worker))?.settings.captureEnabled };
 }
 const test = base.extend<{ app: App }>({
   app: async ({}, use) => {
@@ -112,6 +122,37 @@ test('授权、采集、中文搜索、全文、填入不发送、草稿保护�
   await expect(popup.getByText('0 条记录', { exact: true })).toBeVisible();
   expect((await getState(worker))?.settings.captureEnabled).toBe(false);
   await popup.screenshot({ path: 'test-results/popup-empty.png' });
+});
+
+test('正式版页面脚本失效后重试恢复连接，不重复记录也不导入旧消息', async ({ app }) => {
+  const { chat, popup, worker, extensionId } = app;
+  await chat.goto('https://chatgpt.com/c/synthetic-conversation?bubble-layout');
+  await enable(app);
+  await chat.getByRole('textbox').fill('失联前已经保存的消息');
+  await chat.getByRole('textbox').press('Enter');
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  // WXT 使用此事件使旧脚本失效，模拟升级或重新加载后的孤立页面上下文。
+  await chat.evaluate((extensionId) => {
+    document.dispatchEvent(new CustomEvent(`${extensionId}:content:wxt:content-script-started`, {
+      detail: { contentScriptName: 'content', messageId: 'simulate-disconnected-script' },
+    }));
+  }, extensionId);
+  expect(await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+    try { await chrome.tabs.sendMessage(tab!.id!, { scope: 'xuanecho', action: 'page:status' }); return true; }
+    catch { return false; }
+  })).toBe(false);
+  await activateChat(app);
+  // 两次同时重试也只恢复一份监听器。
+  await popup.getByRole('button', { name: '重新检测当前页面' }).evaluate((button) => {
+    (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click();
+  });
+  await expect(popup.locator('.connection')).toContainText('已连接 ChatGPT');
+  expect((await getState(worker))?.records).toHaveLength(1);
+  await chat.getByRole('textbox').fill('重新连接后的新消息');
+  await chat.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(2);
+  expect((await getState(worker))?.records[0]?.text).toBe('重新连接后的新消息');
 });
 
 test('旧消息、回复、失败发送、重渲染、重复事件与输入法不误采集', async ({ app }) => {
@@ -254,11 +295,8 @@ test('用户实站气泡标记与中文发送按钮支持键盘、点击和延�
   await chat.getByRole('textbox').fill('新的气泡布局，中文按钮发送');
   await chat.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(async () => (await getState(worker))?.records.length).toBe(2);
-  await activateChat(app);
-  await popup.locator('summary').click();
-  await popup.getByRole('button', { name: '刷新诊断' }).click();
-  await expect.poll(async () => JSON.parse(await popup.getByRole('textbox', { name: '采集诊断信息' }).inputValue()).page.diagnostics.savedRecords).toBe(2);
-  const report = JSON.parse(await popup.getByRole('textbox', { name: '采集诊断信息' }).inputValue());
+  await expect.poll(async () => (await captureReport(app)).page.diagnostics.savedRecords).toBe(2);
+  const report = await captureReport(app);
   expect(report.page.diagnostics.stage).toBe('saved');
   expect(report.page.diagnostics.messageMarkerCounts).toEqual({ authorRole: 0, userBubble: 3 });
   expect(report.page.diagnostics.sendAttempts).toBe(2);
@@ -303,11 +341,8 @@ test('诊断能区分发送未确认与存储成功，输出不包含提示词',
     };
   });
   await send(chat, '不应出现在诊断中的原文');
-  await activateChat(app);
-  await popup.locator('summary').click();
-  await popup.getByRole('button', { name: '刷新诊断' }).click();
-  const output = await popup.getByRole('textbox', { name: '采集诊断信息' }).inputValue();
-  const report = JSON.parse(output);
+  const report = await captureReport(app);
+  const output = JSON.stringify(report);
   expect(report.page.diagnostics.stage).toBe('waiting-message');
   expect(report.page.diagnostics.sendAttempts).toBe(1);
   expect(report.page.diagnostics.confirmedMessages).toBe(0);

@@ -32,7 +32,7 @@ macOS 选择隐藏目录时，可按 `Command + Shift + G` 输入完整路径。
 
 ## 数据与隐私
 
-生产版仅申请 `storage` 权限和两个 ChatGPT 域名的站点权限，不读取其他网站。内容脚本只接收采集开关和用户发起的填入操作，整个历史库仅对扩展页面开放。
+生产版申请 `storage` 和 `scripting` 权限，站点范围仅限两个 ChatGPT 域名。`scripting` 仅用于页面连接失效时重新加载扩展自带的页面脚本，不读取其他网站。内容脚本只接收采集开关和用户发起的填入操作，整个历史库仅对扩展页面开放。
 
 记录前需同时满足：用户已经启用记录、发生发送操作、新的用户消息出现在页面中、其文本与本次发送内容匹配。仅按 Enter、编辑草稿、输入法组合、页面重渲染或 AI 回复都不足以产生记录。采集使用页面 DOM，不拦截网络请求，不调用 ChatGPT 私有接口。页面确认表示网站已显示该次提交，不等同于服务端投递回执。
 
@@ -55,7 +55,7 @@ npm run test:all     # 正式构建 + 全部自动化测试
 
 若 npm 遇到 `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`，应修复可信证书链；不要关闭 TLS 校验。本次 macOS 环境通过单次命令 `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem npm install` 使用系统 CA 文件解决，未修改全局 npm 或证书配置。
 
-2026-11-17 验证结果：`npm run compile` 通过；`npm run test:all` 正式构建成功，12 项纯逻辑测试与 10 组扩展集成测试全部通过（22/22）。开发服务器构建及开发版 MV3 弹窗在独立 Chromium 中加载通过。
+2026-11-17 验证结果：`npm run compile` 通过；`npm run test:all` 正式构建成功，12 项纯逻辑测试与 11 组扩展集成测试全部通过（23/23）。开发服务器构建及开发版 MV3 弹窗在独立 Chromium 中加载通过。
 
 测试使用独立的临时 Chrome 配置和合成数据，不读取个人浏览器资料，也不向真实 ChatGPT 发送测试消息。集成测试加载正式 MV3 扩展，把测试域名请求替换成本地 fixture，验证授权、采集、搜索、删除、清空、填入、草稿保护、暂停、多标签页和重启持久化。测试截图与报告在忽略的 `test-results/` 下。
 
@@ -77,20 +77,24 @@ npm run test:all     # 正式构建 + 全部自动化测试
 
 使用 `npm run dev` 时保持终端运行；代码热更新后刷新 ChatGPT 页面。若仍运行旧脚本，可重启开发命令，在 `chrome://extensions` 刷新 XuanEcho，再刷新 ChatGPT。开发版应加载 `.output/chrome-mv3-dev`，正式版才加载 `.output/chrome-mv3`。确认弹窗显示「已连接 ChatGPT」，再由用户主动点击「同意并开启记录」，然后发送一条新文本；暂停状态与启用前的旧消息不会被自动记录。
 
+### 正式版显示尚未连接
+
+开发版与正式版使用同一套业务源码，但开发版通过 WXT 动态注册和重载页面脚本，正式版使用 `manifest.json` 中的静态内容脚本配置；浏览器中的扩展 ID、站点权限和本地数据彼此独立。
+
+弹窗出现但无法连接，表示当前页面尚无可用的消息接收端。现在打开弹窗或点击「重试」时，会在接收端缺失的情况下检查当前标签页，再尝试加载已打包的 `content-scripts/content.js`。仅允许两个 ChatGPT 域名，不自动改变记录开关，也不导入旧聊天。重复重连会共用同一次加载任务，避免重复监听。页面完成初始授权状态读取后，才向弹窗确认连接。
+
+1. 执行 `npm run build` 后，在 `chrome://extensions` 刷新**已有的正式版**扩展，确保新增的 `scripting` 权限生效。
+2. 保持开发版关闭，回到 ChatGPT 页面打开正式版弹窗，点击「重试」。
+3. 若提示站点权限问题，在该正式版的详情页允许访问当前 ChatGPT 域名。若提示页面脚本加载失败，查看扩展卡片的错误信息。
+4. 正式版不需要运行 `npm run dev`；无需在网页 Console 粘贴诊断代码。
+
 ### 开启后仍未记录，如何 debug
 
-当前适配同时支持旧的 `[data-message-author-role="user"]` 与实站反馈的 `[data-user-message-bubble]`。中文「发送」按钮及输入框所在表单的提交按钮也已适配。仅找到编辑器，不代表发送确认链路成功。
+当前适配同时支持旧的 `[data-message-author-role="user"]` 与实站反馈的 `[data-user-message-bubble]`，并支持中文发送按钮和表单提交。弹窗中的采集诊断入口已按用户要求移除，内部 `page:status` 接口仍供自动化测试与排查使用。
 
-1. 保持 `npm run dev` 运行，刷新扩展与 ChatGPT 页面；开启记录后发送一条新文本。
-2. 打开弹窗底部「采集诊断」，点击「刷新诊断」。`adapterVersion` 应为 `capture-3`，否则仍是旧内容脚本，需要刷新网页。
-3. 核对顶层 `settingEnabled` 和 `page.diagnostics.captureEnabled` 都是 `true`。前者是持久化设置，后者是此页面实际使用的开关；不一致表示开关同步未完成。
-4. 看 `sendAttempts`、`confirmedMessages`、`savedRecords`，依次对应识别发送、确认用户消息、成功保存。这些是当前页面脚本存续期间的计数，刷新页面后重置，与历史总数 `localRecords` 不同。
-5. `sendAttempts=0` 表示还没识别发送动作，可分别用 Enter 和点击发送按钮测试。已识别但 `stage=waiting-message/timeout`，说明尚未匹配到新增用户气泡；`text-mismatch` 表示气泡文本匹配失败；`error` 表示保存出错；`skipped` 表示被后台按重复消息或过期授权跳过；`saved` 才表示最近一次保存成功。
-6. `messageMarkerCounts` 和 `userMessageCount` 用于检查网页标记适配。`sendButtonFound` 可能在空输入框时为 `false`，因为按钮会切换成语音功能，应在输入文字后观察。
+开发模式可在 **ChatGPT 页面**的 DevTools Console 中筛选 `XuanEcho`，查看无内容的阶段日志。`npm run dev` 所在终端主要显示编译信息。`sendAttempts`、`confirmedMessages`、`savedRecords` 依次对应识别发送、确认新增用户消息和保存成功；`waiting-message/timeout` 表示等待页面消息确认，`text-mismatch` 表示文本未匹配，`error` 表示保存失败。这些计数属于当前页面脚本，刷新或重新加载脚本后重置。
 
-开发模式下还可在 **ChatGPT 页面**的 DevTools Console 过滤 `XuanEcho`，观察同一组阶段日志；`npm run dev` 所在终端主要显示编译信息。记录经过后台后才保存，本地历史计数以诊断中的 `localRecords` 为准。
-
-诊断仅保留阶段、计数和时间，不保存聊天文字、消息 ID、页面 URL 或采集令牌，也不上传诊断数据。可点击诊断文本框全选后复制。无法定位时提供该诊断即可，无需提供真实提示词或完整聊天 HTML。
+诊断只包含阶段、计数和时间，不包含聊天原文或采集令牌。普通使用时先检查弹窗的连接反馈与记录开关，再发送一条新文本。
 
 ## 代码位置
 
