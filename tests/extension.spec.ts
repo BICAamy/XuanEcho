@@ -283,6 +283,94 @@ test('无 id 适配排除隐藏和历史消息内的编辑框，等主编辑器�
   expect((await getState(worker))?.records).toHaveLength(0);
 });
 
+test('Markdown 粗体与有序列表渲染后仍保存原文，后续短文本正常记录', async ({ app }) => {
+  const { chat, popup, worker } = app;
+  await chat.goto('https://chatgpt.com/c/synthetic-conversation?bubble-layout');
+  await enable(app);
+  await chat.evaluate(() => {
+    const add = (window as any).addMessage;
+    (window as any).addMessage = (role: string, text: string) => {
+      add(role, text);
+      if (role !== 'user' || !text.includes('**行程准备**')) return;
+      const body = document.querySelector('#messages article:last-child [data-user-message-bubble] .whitespace-pre-wrap')!;
+      // 固定的合成 HTML：模拟发送后 Markdown 被网页排版，绝不渲染真实用户原文。
+      body.innerHTML = '<p>准备一份活动备忘：</p><ol><li><strong>行程准备</strong></li><li>随身物品</li></ol><p>要求：</p><ol><li>简短明确</li><li>保留重点</li></ol>';
+    };
+  });
+  const source = '准备一份活动备忘：\n\n1. **行程准备**\n2. 随身物品\n\n\n要求：\n\n1. 简短明确\n2. 保留重点';
+  await chat.getByRole('textbox').fill(source);
+  await chat.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  expect((await getState(worker))?.records[0]?.text).toBe(source);
+  await activateChat(app);
+  await popup.getByRole('button', { name: '填入', exact: true }).click();
+  await expect.poll(() => chat.evaluate(() => document.body.dataset.model)).toBe(source);
+  expect(await chat.evaluate(() => (window as any).fixtureSent)).toBe(1);
+  await chat.getByRole('textbox').press('Enter');
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(2);
+  expect((await getState(worker))?.records[0]?.text).toBe(source);
+  await chat.getByRole('textbox').fill('31415926');
+  await chat.getByRole('textbox').press('Enter');
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(3);
+});
+
+test('多个段落文本区域都参与发送确认，不仅匹配首段', async ({ app }) => {
+  const { chat, worker } = app;
+  await enable(app);
+  await chat.evaluate(() => {
+    const add = (window as any).addMessage;
+    (window as any).addMessage = (role: string, text: string) => {
+      add(role, text);
+      if (role !== 'user') return;
+      const message = document.querySelector('#messages article:last-child [data-message-author-role="user"]')!;
+      message.replaceChildren(...text.split('\n\n').map(part => {
+        const paragraph = document.createElement('p');
+        paragraph.className = 'whitespace-pre-wrap'; paragraph.textContent = part;
+        return paragraph;
+      }));
+    };
+  });
+  const source = '第一段介绍活动。\n\n第二段列出准备工作。\n\n第三段说明时间。';
+  await send(chat, source);
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  expect((await getState(worker))?.records[0]?.text).toBe(source);
+});
+
+test('渲染代码块中的字面 Markdown 符号不丢失，保存原始围栏', async ({ app }) => {
+  const { chat, worker } = app;
+  await enable(app);
+  await chat.evaluate(() => {
+    const add = (window as any).addMessage;
+    (window as any).addMessage = (role: string, text: string) => {
+      add(role, text);
+      if (role !== 'user') return;
+      const body = document.querySelector('#messages article:last-child .whitespace-pre-wrap')!;
+      body.innerHTML = '<p>检查以下表达式：</p><pre><code>const total = 2 * 3;\nconst marker = "**literal**";</code></pre>';
+    };
+  });
+  const source = '检查以下表达式：\n\n```ts\nconst total = 2 * 3;\nconst marker = "**literal**";\n```';
+  await send(chat, source, 'click');
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  expect((await getState(worker))?.records[0]?.text).toBe(source);
+});
+
+test('格式兼容不接受不同正文，也不把匹配的 AI 回复当作用户发送', async ({ app }) => {
+  const { chat, worker } = app;
+  await enable(app);
+  await chat.evaluate(() => {
+    const add = (window as any).addMessage;
+    (window as any).addMessage = (role: string, text: string) => {
+      add(role, text);
+      const body = document.querySelector('#messages article:last-child .whitespace-pre-wrap')!;
+      body.innerHTML = role === 'user' ? '<p>复习<strong>重点乙</strong></p>' : '<p>复习<strong>重点甲</strong></p>';
+    };
+  });
+  await send(chat, '复习**重点甲**');
+  await expect.poll(async () => (await captureReport(app)).page.diagnostics.stage).toBe('text-mismatch');
+  expect((await getState(worker))?.records).toHaveLength(0);
+  expect((await captureReport(app)).page.diagnostics.confirmedMessages).toBe(0);
+});
+
 test('用户实站气泡标记与中文发送按钮支持键盘、点击和延迟属性', async ({ app }) => {
   const { chat, popup, worker } = app;
   await chat.goto('https://chatgpt.com/c/synthetic-conversation?bubble-layout');

@@ -1,6 +1,8 @@
 import { comparableText } from './domain';
 import type { CaptureSettings } from './domain';
 import type { CaptureInput } from './repository';
+import { matchesPromptText, preparePromptComparison } from './prompt-text';
+import type { PromptComparison } from './prompt-text';
 
 const EDITOR_SELECTORS = [
   '#prompt-textarea[contenteditable]',
@@ -60,7 +62,17 @@ function userMessages(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(USER_SELECTOR)).filter((node) => !node.querySelector(USER_SELECTOR));
 }
 function messageText(node: HTMLElement): string {
-  return (node.querySelector<HTMLElement>('.whitespace-pre-wrap') ?? node).innerText;
+  // 多段消息的列表/代码块可能位于首个 whitespace-pre-wrap 之外，必须读取整个用户气泡。
+  const read = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (!(node instanceof HTMLElement)) return '';
+    if (node.matches('button, [role="button"], script, style, svg, [aria-hidden="true"], [contenteditable]')) return '';
+    if (node.tagName === 'BR') return '\n';
+    const text = Array.from(node.childNodes).map(read).join('');
+    return /^(P|DIV|LI|UL|OL|PRE|BLOCKQUOTE|H[1-6]|TABLE|THEAD|TBODY|TR|TD|TH)$/.test(node.tagName)
+      ? `\n${text}\n` : text;
+  };
+  return read(node);
 }
 
 export function insertPrompt(text: string): void {
@@ -91,6 +103,7 @@ export function insertPrompt(text: string): void {
 
 type Intent = {
   text: string; sentAt: number; token: string;
+  comparison: PromptComparison;
   conversationId: string | null;
   knownIds: Set<string>; knownNodes: WeakSet<Element>;
   knownMatchingMessages: number;
@@ -98,7 +111,7 @@ type Intent = {
 export type CaptureStage = 'paused' | 'ready' | 'send-detected' | 'waiting-editor' | 'waiting-message' |
   'text-mismatch' | 'saving' | 'saved' | 'skipped' | 'timeout' | 'navigation' | 'error';
 export type CaptureDiagnostics = {
-  adapterVersion: 'capture-3';
+  adapterVersion: 'capture-4';
   captureEnabled: boolean;
   stage: CaptureStage;
   lastEvent: 'enter' | 'pointerdown' | 'click' | 'submit' | null;
@@ -129,7 +142,7 @@ export function createCapture(
   };
   // 仅包含阶段、计数和时间，不包含原文、URL、消息 ID 或授权令牌。
   const getDiagnostics = (): CaptureDiagnostics => ({
-    adapterVersion: 'capture-3', captureEnabled: settings.captureEnabled, ...diagnostics,
+    adapterVersion: 'capture-4', captureEnabled: settings.captureEnabled, ...diagnostics,
     userMessageCount: userMessages().length,
     sendButtonFound: Boolean(findSendButton()),
     messageMarkerCounts: {
@@ -167,11 +180,11 @@ export function createCapture(
     }
     let unmatchedMessage = false;
     const nodes = userMessages();
-    const matchingCount = nodes.filter((node) => comparableText(messageText(node)) === comparableText(intent.text)).length;
+    const matchingCount = nodes.filter((node) => matchesPromptText(messageText(node), intent.comparison)).length;
     for (const node of nodes) {
       const id = messageId(node);
       if (intent.knownNodes.has(node) || (id && intent.knownIds.has(id))) continue;
-      if (comparableText(messageText(node)) !== comparableText(intent.text)) { unmatchedMessage = true; continue; }
+      if (!matchesPromptText(messageText(node), intent.comparison)) { unmatchedMessage = true; continue; }
       // 新布局不一定提供消息 ID。重渲染旧气泡不能当成发送，匹配文本数量必须增长。
       if (!id && matchingCount <= intent.knownMatchingMessages) continue;
       let eventId = id;
@@ -216,14 +229,15 @@ export function createCapture(
       return;
     }
     const nodes = userMessages();
+    const comparison = preparePromptComparison(text);
     clearPending();
     diagnostics.lastEvent = event;
     diagnostics.lastEventAt = Date.now();
     diagnostics.sendAttempts++;
     setStage('send-detected');
-    pending = { text, sentAt: Date.now(), token: settings.captureToken, conversationId: conversationId(),
+    pending = { text, comparison, sentAt: Date.now(), token: settings.captureToken, conversationId: conversationId(),
       knownIds: new Set(nodes.map(messageId).filter((id): id is string => Boolean(id))), knownNodes: new WeakSet(nodes),
-      knownMatchingMessages: nodes.filter((node) => comparableText(messageText(node)) === comparableText(text)).length };
+      knownMatchingMessages: nodes.filter((node) => matchesPromptText(messageText(node), comparison)).length };
     timeout = setTimeout(() => { if (pending) { clearPending(); setStage('timeout'); } }, INTENT_TTL);
     scheduleConfirm();
   };

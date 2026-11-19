@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { comparableText, decodeState, emptyState, isChatGPTUrl, searchRecords, STATE_KEY } from '../lib/domain';
 import { createRepository } from '../lib/repository';
 import type { StoragePort } from '../lib/repository';
+import { matchesPromptText, preparePromptComparison } from '../lib/prompt-text';
 
 function memoryStorage(initial: Record<string, unknown> = {}) {
   let data = structuredClone(initial);
@@ -111,4 +112,38 @@ test('仅接受 HTTPS 的准确 ChatGPT 域名', () => {
 });
 test('页面文本标准化只用于匹配，兼容换行和不换行空格', () => {
   expect(comparableText('  整理\n课程\u00a0PPT  ')).toBe('整理 课程 PPT');
+});
+
+test('Markdown 比对同时接受源码和粗体、列表渲染后的文本', () => {
+  const source = '准备清单：\n\n1. **地图**\n2. __水壶__\n\n> 留意天气';
+  const comparison = preparePromptComparison(source);
+  expect(matchesPromptText(source, comparison)).toBe(true);
+  expect(matchesPromptText('准备清单：\n地图\n水壶\n留意天气', comparison)).toBe(true);
+  expect(matchesPromptText('准备清单：\n地图\n食物\n留意天气', comparison)).toBe(false);
+});
+
+test('Markdown 解析保留行内代码和代码块中的星号、数字及运算符', () => {
+  const source = '检查 `a**b`\n\n```ts\nconst total = 2 * 3;\nconst text = "**literal**";\n```';
+  const comparison = preparePromptComparison(source);
+  expect(matchesPromptText('检查 a**b\nconst total = 2 * 3;\nconst text = "**literal**";', comparison)).toBe(true);
+  expect(matchesPromptText('检查 ab\nconst total = 23;\nconst text = "literal";', comparison)).toBe(false);
+});
+
+test('不把一般标点、数字和未配对的 Markdown 字符直接删除', () => {
+  for (const [source, different] of [['2 * 3', '23'], ['x + 1', 'x - 1'], ['普通 ** 未闭合', '普通 未闭合'], ['第 12 项', '第 21 项']]) {
+    expect(matchesPromptText(different!, preparePromptComparison(source!))).toBe(false);
+  }
+});
+
+test('标题、嵌套列表和 Markdown 表格可按显示文本确认', () => {
+  expect(matchesPromptText('准备 要点 地图 雨具', preparePromptComparison('# 准备\n\n- 要点\n  - **地图**\n  - 雨具'))).toBe(true);
+  expect(matchesPromptText('物品 数量 地图 1', preparePromptComparison('| 物品 | 数量 |\n| --- | --- |\n| 地图 | 1 |'))).toBe(true);
+});
+
+test('无法确定的 HTML 保留源码比对，解析不执行 HTML', () => {
+  const source = '<script>doNotExecute()</script>';
+  const comparison = preparePromptComparison(source);
+  expect(comparison.rendered).toBeNull();
+  expect(matchesPromptText(source, comparison)).toBe(true);
+  expect(matchesPromptText('doNotExecute()', comparison)).toBe(false);
 });

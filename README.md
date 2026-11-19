@@ -55,7 +55,7 @@ npm run test:all     # 正式构建 + 全部自动化测试
 
 若 npm 遇到 `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`，应修复可信证书链；不要关闭 TLS 校验。本次 macOS 环境通过单次命令 `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem npm install` 使用系统 CA 文件解决，未修改全局 npm 或证书配置。
 
-2026-11-17 验证结果：`npm run compile` 通过；`npm run test:all` 正式构建成功，12 项纯逻辑测试与 11 组扩展集成测试全部通过（23/23）。开发服务器构建及开发版 MV3 弹窗在独立 Chromium 中加载通过。
+2026-11-19 验证结果：`npm run compile` 通过；`npm run test:all` 正式构建成功，17 项纯逻辑测试与 15 组扩展集成测试全部通过（32/32）。开发服务器构建及开发版 MV3 弹窗在独立 Chromium 中加载通过。
 
 测试使用独立的临时 Chrome 配置和合成数据，不读取个人浏览器资料，也不向真实 ChatGPT 发送测试消息。集成测试加载正式 MV3 扩展，把测试域名请求替换成本地 fixture，验证授权、采集、搜索、删除、清空、填入、草稿保护、暂停、多标签页和重启持久化。测试截图与报告在忽略的 `test-results/` 下。
 
@@ -77,6 +77,14 @@ npm run test:all     # 正式构建 + 全部自动化测试
 
 使用 `npm run dev` 时保持终端运行；代码热更新后刷新 ChatGPT 页面。若仍运行旧脚本，可重启开发命令，在 `chrome://extensions` 刷新 XuanEcho，再刷新 ChatGPT。开发版应加载 `.output/chrome-mv3-dev`，正式版才加载 `.output/chrome-mv3`。确认弹窗显示「已连接 ChatGPT」，再由用户主动点击「同意并开启记录」，然后发送一条新文本；暂停状态与启用前的旧消息不会被自动记录。
 
+### Markdown 与多段落提示词
+
+发送后，ChatGPT 可能把 `**粗体**`、有序列表和代码围栏排版成 HTML。采集确认同时接受原始文本和 Markdown 显示文本，不再要求渲染后的气泡仍包含原始标记。通过本地 `marked` 语法树提取显示文本，只参与比对；存储、展开和填入仍使用发送前的完整原文。
+
+确认时读取整个用户消息气泡，包含首个文本区域之后的段落、列表和代码块，排除按钮等页面控件。代码中的星号、数字、运算符保持原样，不采用直接删除标点的比对规则。对于未支持的 HTML、附件等，仍保留原文比对，不执行或插入 Markdown 生成的 HTML。不会因为篇幅长或内容含义不同而选择性采集。
+
+回归测试使用合成文本覆盖粗体与有序列表、多个文本区域、嵌套列表、代码字面符号、原文填入和再次发送。仍需同时满足已授权、发送操作及新增用户消息确认；不同正文或 AI 回复不能通过匹配。
+
 ### 正式版显示尚未连接
 
 开发版与正式版使用同一套业务源码，但开发版通过 WXT 动态注册和重载页面脚本，正式版使用 `manifest.json` 中的静态内容脚本配置；浏览器中的扩展 ID、站点权限和本地数据彼此独立。
@@ -92,7 +100,7 @@ npm run test:all     # 正式构建 + 全部自动化测试
 
 当前适配同时支持旧的 `[data-message-author-role="user"]` 与实站反馈的 `[data-user-message-bubble]`，并支持中文发送按钮和表单提交。弹窗中的采集诊断入口已按用户要求移除，内部 `page:status` 接口仍供自动化测试与排查使用。
 
-开发模式可在 **ChatGPT 页面**的 DevTools Console 中筛选 `XuanEcho`，查看无内容的阶段日志。`npm run dev` 所在终端主要显示编译信息。`sendAttempts`、`confirmedMessages`、`savedRecords` 依次对应识别发送、确认新增用户消息和保存成功；`waiting-message/timeout` 表示等待页面消息确认，`text-mismatch` 表示文本未匹配，`error` 表示保存失败。这些计数属于当前页面脚本，刷新或重新加载脚本后重置。
+内部 `page:status` 提供不含原文的阶段信息，目前没有弹窗诊断面板或自动 Console 日志。`npm run dev` 所在终端主要显示编译信息。`sendAttempts`、`confirmedMessages`、`savedRecords` 依次对应识别发送、确认新增用户消息和保存成功；`waiting-message/timeout` 表示等待页面消息确认，`text-mismatch` 表示文本未匹配，`error` 表示保存失败。这些计数属于当前页面脚本，刷新或重新加载脚本后重置。
 
 诊断只包含阶段、计数和时间，不包含聊天原文或采集令牌。普通使用时先检查弹窗的连接反馈与记录开关，再发送一条新文本。
 
@@ -102,6 +110,7 @@ npm run test:all     # 正式构建 + 全部自动化测试
 - `lib/repository.ts`：持久化与串行读写、授权令牌和幂等去重。
 - `lib/messages.ts`：扩展消息协议与失败反馈。
 - `lib/chatgpt.ts`：页面适配、发送确认和输入框编辑。
+- `lib/prompt-text.ts`：原文与 Markdown 显示文本的比对，只读取语法树，不生成 HTML。
 - `entrypoints/background.ts`：唯一写入入口、消息来源校验和开关广播。
 - `entrypoints/content.ts`：页面生命周期、采集和填入消息处理。
 - `entrypoints/popup/`：中文弹窗和本地历史管理。
@@ -109,3 +118,5 @@ npm run test:all     # 正式构建 + 全部自动化测试
 - `docs/HANDOFF.md`：产品背景、后续版本规划与验收记录。
 
 实现依据：[Chrome 消息通信](https://developer.chrome.com/docs/extensions/develop/concepts/messaging)、[Chrome 本地存储](https://developer.chrome.com/docs/extensions/reference/api/storage)、[Playwright 扩展测试](https://playwright.dev/docs/chrome-extensions)。
+
+Markdown 解析依据：[Marked Lexer 文档](https://marked.js.org/using_pro#lexer)。
