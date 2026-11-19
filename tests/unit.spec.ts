@@ -122,6 +122,15 @@ test('Markdown 比对同时接受源码和粗体、列表渲染后的文本', ()
   expect(matchesPromptText('准备清单：\n地图\n食物\n留意天气', comparison)).toBe(false);
 });
 
+test('部分 Markdown 渲染保留编号时，仍对两侧采用相同语法比较', () => {
+  const source = '准备清单：\n\n1. **地图、2. 水壶、3. 雨具**\n\n要求：\n\n1. 精简\n2. 准确';
+  const comparison = preparePromptComparison(source);
+  expect(matchesPromptText('准备清单：\n\n1. 地图、2. 水壶、3. 雨具\n\n要求：\n\n1. 精简\n\n2. 准确', comparison)).toBe(true);
+  expect(matchesPromptText('准备清单：\n\n1. 地图、2. 水壶、3. 雨具\n\n要求：\n\n1. 精简\n\n2. 错误内容', comparison)).toBe(false);
+  // 仍保留正文中的数字与标点，不把条目正文中的数字当成列表标记删除。
+  expect(matchesPromptText('准备清单：\n\n1. 地图、9. 水壶、3. 雨具\n\n要求：\n\n1. 精简\n\n2. 准确', comparison)).toBe(false);
+});
+
 test('Markdown 解析保留行内代码和代码块中的星号、数字及运算符', () => {
   const source = '检查 `a**b`\n\n```ts\nconst total = 2 * 3;\nconst text = "**literal**";\n```';
   const comparison = preparePromptComparison(source);

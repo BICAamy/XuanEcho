@@ -336,6 +336,45 @@ test('多个段落文本区域都参与发送确认，不仅匹配首段', async
   expect((await getState(worker))?.records[0]?.text).toBe(source);
 });
 
+test('粘贴的真实 HTML 列表按段落读取，点击发送后保留完整条目', async ({ app }) => {
+  const { chat, worker } = app;
+  await chat.goto('https://chatgpt.com/c/synthetic-conversation?bubble-layout');
+  await enable(app);
+  const editor = chat.getByRole('textbox');
+  // 模拟富文本粘贴后的编辑器结构，不把整份内容塞进一个文本节点。
+  await editor.evaluate((node) => {
+    node.innerHTML = '<p>准备课程卡片：</p><ol><li><p><strong>概念要点</strong></p></li><li><p>应用步骤</p></li></ol><p>要求：</p><ol><li><p>简洁</p></li><li><p>标明重点</p></li></ol>';
+    node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
+  });
+  await chat.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  const saved = (await getState(worker))!.records[0]!.text;
+  expect(saved).toContain('概念要点\n');
+  expect(saved).toContain('应用步骤');
+  expect(saved).toContain('简洁\n');
+  expect(saved).toContain('标明重点');
+});
+
+test('气泡保留列表编号但渲染粗体时仍确认完整 Markdown 原文', async ({ app }) => {
+  const { chat, worker } = app;
+  await chat.goto('https://chatgpt.com/c/synthetic-conversation?bubble-layout');
+  await enable(app);
+  await chat.evaluate(() => {
+    const add = (window as any).addMessage;
+    (window as any).addMessage = (role: string, text: string) => {
+      add(role, text);
+      if (role !== 'user') return;
+      const body = document.querySelector('#messages article:last-child .whitespace-pre-wrap')!;
+      body.innerHTML = '<p>准备课程卡片：</p><p>1. <strong>概念要点、2. 应用步骤、3. 复习安排</strong></p><p>要求：</p><p>1. 简洁</p><p>2. 标明重点</p>';
+    };
+  });
+  const source = '准备课程卡片：\n\n1. **概念要点、2. 应用步骤、3. 复习安排**\n\n\n要求：\n\n1. 简洁\n2. 标明重点';
+  await chat.getByRole('textbox').fill(source);
+  await chat.getByRole('button', { name: '发送', exact: true }).click();
+  await expect.poll(async () => (await getState(worker))?.records.length).toBe(1);
+  expect((await getState(worker))?.records[0]?.text).toBe(source);
+});
+
 test('渲染代码块中的字面 Markdown 符号不丢失，保存原始围栏', async ({ app }) => {
   const { chat, worker } = app;
   await enable(app);

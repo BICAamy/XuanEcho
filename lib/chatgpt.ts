@@ -41,8 +41,16 @@ export function editorText(editor: HTMLElement): string {
     if (!(node instanceof HTMLElement)) return '';
     if (node.tagName === 'BR') return node.classList.contains('ProseMirror-trailingBreak') ? '' : '\n';
     if (node.childNodes.length === 1 && node.firstChild instanceof HTMLBRElement) return '';
+    // 富文本粘贴可能产生真正的列表节点，不能把相邻 li 拼成同一句话。
+    if (node.tagName === 'OL' || node.tagName === 'UL') {
+      const start = Number(node.getAttribute('start') ?? 1);
+      return Array.from(node.children).map((item, index) => {
+        const marker = node.tagName === 'OL' ? `${start + index}. ` : '- ';
+        return marker + read(item).replace(/\n/g, '\n  ');
+      }).join('\n');
+    }
     const children = Array.from(node.childNodes);
-    const isBlock = (child?: Node) => child instanceof HTMLElement && /^(P|DIV)$/.test(child.tagName);
+    const isBlock = (child?: Node) => child instanceof HTMLElement && /^(P|DIV|UL|OL|LI|BLOCKQUOTE|PRE|H[1-6]|TABLE|TR)$/.test(child.tagName);
     return children.map((child, index) =>
       (index > 0 && (isBlock(child) || isBlock(children[index - 1])) ? '\n' : '') + read(child),
     ).join('');
@@ -111,9 +119,10 @@ type Intent = {
 export type CaptureStage = 'paused' | 'ready' | 'send-detected' | 'waiting-editor' | 'waiting-message' |
   'text-mismatch' | 'saving' | 'saved' | 'skipped' | 'timeout' | 'navigation' | 'error';
 export type CaptureDiagnostics = {
-  adapterVersion: 'capture-4';
+  adapterVersion: 'capture-5';
   captureEnabled: boolean;
   stage: CaptureStage;
+  lastWaitStage: 'waiting-editor' | 'waiting-message' | 'text-mismatch' | null;
   lastEvent: 'enter' | 'pointerdown' | 'click' | 'submit' | null;
   lastEventAt: number | null;
   lastSavedAt: number | null;
@@ -135,6 +144,7 @@ export function createCapture(
   let scheduled = false;
   const diagnostics = {
     stage: 'paused' as CaptureStage,
+    lastWaitStage: null as CaptureDiagnostics['lastWaitStage'],
     lastEvent: null as CaptureDiagnostics['lastEvent'],
     lastEventAt: null as number | null,
     lastSavedAt: null as number | null,
@@ -142,7 +152,7 @@ export function createCapture(
   };
   // 仅包含阶段、计数和时间，不包含原文、URL、消息 ID 或授权令牌。
   const getDiagnostics = (): CaptureDiagnostics => ({
-    adapterVersion: 'capture-4', captureEnabled: settings.captureEnabled, ...diagnostics,
+    adapterVersion: 'capture-5', captureEnabled: settings.captureEnabled, ...diagnostics,
     userMessageCount: userMessages().length,
     sendButtonFound: Boolean(findSendButton()),
     messageMarkerCounts: {
@@ -151,6 +161,7 @@ export function createCapture(
     },
   });
   const setStage = (stage: CaptureStage) => {
+    if (stage === 'waiting-editor' || stage === 'waiting-message' || stage === 'text-mismatch') diagnostics.lastWaitStage = stage;
     if (diagnostics.stage === stage) return;
     diagnostics.stage = stage;
     onDiagnostic?.(getDiagnostics());
@@ -233,6 +244,7 @@ export function createCapture(
     clearPending();
     diagnostics.lastEvent = event;
     diagnostics.lastEventAt = Date.now();
+    diagnostics.lastWaitStage = null;
     diagnostics.sendAttempts++;
     setStage('send-detected');
     pending = { text, comparison, sentAt: Date.now(), token: settings.captureToken, conversationId: conversationId(),

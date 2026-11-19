@@ -68,5 +68,8 @@ export function preparePromptComparison(text: string): PromptComparison {
 
 export function matchesPromptText(actual: string, expected: PromptComparison): boolean {
   const normalized = comparableText(actual);
-  return normalized === expected.literal || (expected.rendered !== null && normalized === expected.rendered);
+  if (normalized === expected.literal || (expected.rendered !== null && normalized === expected.rendered)) return true;
+  // 网页可能仅渲染粗体、仍把列表编号作为普通文本展示；对两侧应用相同解析。
+  // 必须在折叠空白前解析，保留 Markdown 的段落/列表边界。
+  return expected.rendered !== null && preparePromptComparison(actual).rendered === expected.rendered;
 }
